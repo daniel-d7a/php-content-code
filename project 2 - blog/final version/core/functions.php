@@ -1,192 +1,229 @@
 <?php
-// =====================================================================
-// Shared helper functions (procedural, no classes)
-// Database access is done with plain mysqli_* calls (no wrappers).
-// =====================================================================
 
-// ---------------------------------------------------------------------
-// OUTPUT / INPUT
-// ---------------------------------------------------------------------
+session_start();
 
-function e($value)
+// --------------------- POSTS ---------------------
+
+function getBlogs()
 {
-    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+  $db = $GLOBALS["db"];
+
+  $sql = "SELECT title, content, blogs.id as id, users.id as user_id, published_at, image, users.name as name 
+          FROM blogs 
+          JOIN users on users.id = blogs.user_id 
+          ORDER BY published_at DESC;";
+
+  $result = mysqli_query($db, $sql);
+
+  $blogs = mysqli_fetch_all($result, MYSQLI_ASSOC);
+
+  return $blogs;
 }
 
-function sanitize($data)
+function getSinglePost($id)
 {
-    return htmlspecialchars(strip_tags(trim((string) $data)));
+  $db = $GLOBALS["db"];
+
+  $sql = "SELECT title, content, blogs.id as id, published_at, image, users.name as name 
+          FROM blogs 
+          JOIN users on users.id = blogs.user_id 
+          WHERE blogs.id = {$id}
+          LIMIT 1";
+
+  $result = mysqli_query($db, $sql);
+
+  $post = mysqli_fetch_assoc($result);
+
+  return $post;
 }
 
-// ---------------------------------------------------------------------
-// FLASH MESSAGES
-// ---------------------------------------------------------------------
 
-function setFlash($type, $message)
+function uploadImage($image)
 {
-    $_SESSION['flash'] = ['type' => $type, 'message' => $message];
+  $upload_dir = __DIR__ . "/../assets/uploads";
+
+  $allowed_mimes = [
+    "image/jpeg" => "jpg",
+    "image/png" => "png",
+    "image/webp" => "webp",
+    "image/gif" => "gif"
+  ];
+  $mime = mime_content_type($image['tmp_name']);
+
+  $ext = $allowed_mimes[$mime];
+
+  $name = uniqid() . ".{$ext}";
+
+  $fullPath = "$upload_dir/$name";
+
+  move_uploaded_file($image['tmp_name'], $fullPath);
+
+  return $name;
 }
 
-function getFlash()
+
+function deleteImage($imagePath)
 {
-    if (isset($_SESSION['flash'])) {
-        $flash = $_SESSION['flash'];
-        unset($_SESSION['flash']);
-        return $flash;
-    }
-    return null;
+  $upload_dir = __DIR__ . "/../assets/uploads";
+
+  $fullPath = "$upload_dir/$imagePath";
+
+  unlink($fullPath);
 }
 
-// ---------------------------------------------------------------------
-// FORM STATE (errors + old input survive the POST/Redirect/GET cycle)
-// ---------------------------------------------------------------------
-
-function setFormState($errors, $old = [])
+function savePost($title, $content, $user_id, $imagePath)
 {
-    $_SESSION['form_errors'] = $errors;
-    $_SESSION['form_old'] = $old;
+
+  $db = $GLOBALS["db"];
+
+  if (!empty($imagePath)) {
+    $sql = "INSERT INTO blogs (title, content, user_id, image)
+          VALUES ('$title', '$content', $user_id, '$imagePath');";
+  } else {
+    $sql = "INSERT INTO blogs (title, content, user_id)
+          VALUES ('$title', '$content', $user_id);";
+  }
+
+  $result = null;
+  try {
+    $result = mysqli_query($db, $sql);
+  } catch (Exception $e) {
+    var_dump($e);
+    return false;
+  }
+
+  if (!$result) {
+    return false;
+  } else {
+    return true;
+  }
 }
 
-function getFormErrors()
+function updatePost($id, $title, $content, $imagePath)
 {
-    $errors = $_SESSION['form_errors'] ?? [];
-    unset($_SESSION['form_errors']);
-    return $errors;
+  $db = $GLOBALS["db"];
+
+  if(isset($imagePath)){
+    $sql = "UPDATE blogs SET title = '{$title}', content = '{$content}', image = '$imagePath'  WHERE id = {$id}";
+  }else {
+    $sql = "UPDATE blogs SET title = '{$title}', content = '{$content}' WHERE id = {$id}";
+  }
+
+  $result = mysqli_query($db, $sql);
+
+  if (!$result) {
+    return false;
+  } else {
+    return true;
+  }
 }
 
-function getFormOld()
+function checkOwnPost($post_id, $user_id)
 {
-    $old = $_SESSION['form_old'] ?? [];
-    unset($_SESSION['form_old']);
-    return $old;
+  $db = $GLOBALS["db"];
+
+  $sql = "SELECT * FROM blogs WHERE id = $post_id AND user_id = $user_id;";
+
+  $result = mysqli_query($db, $sql);
+
+  $result = mysqli_fetch_all($result, MYSQLI_ASSOC);
+
+  if (empty($result)) {
+    return false;
+  } else {
+    return true;
+  }
 }
 
-// ---------------------------------------------------------------------
-// AUTH (session based)
-// ---------------------------------------------------------------------
+function deletePost($id)
+{
+  $db = $GLOBALS["db"];
+  $sql = "DELETE FROM blogs WHERE id = $id";
+  $result = mysqli_query($db, $sql);
+  if ($result) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+
+// --------------------- AUTH ---------------------
+
+function registerUser($name, $email, $password)
+{
+  $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+
+  $db = $GLOBALS["db"];
+
+  $sql = "INSERT INTO users (name, email, password_hash)
+          VALUES ('$name', '$email', '$passwordHash');";
+
+  $result = null;
+  try {
+
+    $result = mysqli_query($db, $sql);
+  } catch (Exception $e) {
+    // var_dump($e);
+    return false;
+  }
+
+  if (!$result) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
 
 function isLoggedIn()
 {
-    return isset($_SESSION['user_id']);
+  if (isset($_SESSION["user"])) {
+    return true;
+  } else {
+    return false;
+  }
 }
 
-function isAdmin()
+function checkUser($email, $password)
 {
-    return isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin';
+  $db = $GLOBALS["db"];
+
+  $sql = "SELECT *
+          FROM users
+          WHERE email = '$email'
+          LIMIT 1;";
+
+  $result = mysqli_query($db, $sql);
+
+  $users = mysqli_fetch_all($result, MYSQLI_ASSOC);
+
+  if (empty($users)) {
+    return false;
+  }
+
+  $passwordValid = password_verify($password, $users[0]['password_hash']);
+
+  if ($passwordValid) {
+    return $users[0];
+  } else {
+    return false;
+  }
 }
 
-function requireLogin()
+
+
+function setMessage($type, $message)
 {
-    if (!isLoggedIn()) {
-        setFlash('error', 'Please login to access that page.');
-        header('Location: index.php?page=login');
-        exit;
-    }
+  $_SESSION['message'] = [
+    'type' => $type,
+    'text' => $message,
+  ];
 }
 
-// Can the current user edit/delete this post? (author or admin)
-function canEdit($post)
+function getMessage()
 {
-    if (!isLoggedIn() || !is_array($post)) {
-        return false;
-    }
-    return (int) $_SESSION['user_id'] === (int) $post['user_id'] || isAdmin();
-}
-
-// ---------------------------------------------------------------------
-// POSTS (plain mysqli reads; ids are cast to int before querying)
-// ---------------------------------------------------------------------
-
-function getAllPosts()
-{
-    global $conn;
-    $sql = "SELECT p.*, u.name AS author_name
-            FROM posts p
-            INNER JOIN users u ON u.id = p.user_id
-            ORDER BY p.created_at DESC, p.id DESC";
-    $result = mysqli_query($conn, $sql);
-    $posts = [];
-    if ($result) {
-        while ($row = mysqli_fetch_assoc($result)) {
-            $posts[] = $row;
-        }
-    }
-    return $posts;
-}
-
-function getPostById($id)
-{
-    global $conn;
-    $id = (int) $id;
-    $sql = "SELECT p.*, u.name AS author_name, u.role AS author_role
-            FROM posts p
-            INNER JOIN users u ON u.id = p.user_id
-            WHERE p.id = $id
-            LIMIT 1";
-    $result = mysqli_query($conn, $sql);
-    if ($result) {
-        $row = mysqli_fetch_assoc($result);
-        return $row ?: null;
-    }
-    return null;
-}
-
-// ---------------------------------------------------------------------
-// IMAGE UPLOADS
-// ---------------------------------------------------------------------
-
-// Validates and saves the file from $_FILES['image'].
-// Returns the stored filename, or '' when nothing was uploaded.
-// Pushes a readable message into $errors when something is wrong.
-function handleImageUpload(&$errors)
-{
-    if (!isset($_FILES['image']) || $_FILES['image']['error'] === UPLOAD_ERR_NO_FILE) {
-        return '';
-    }
-
-    $file = $_FILES['image'];
-
-    if ($file['error'] !== UPLOAD_ERR_OK) {
-        $errors[] = 'Image upload failed (error code ' . (int) $file['error'] . ').';
-        return '';
-    }
-    if ($file['size'] > MAX_UPLOAD_SIZE) {
-        $errors[] = 'Image must be 2 MB or smaller.';
-        return '';
-    }
-
-    $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-    $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if (!in_array($extension, $allowedExtensions, true)) {
-        $errors[] = 'Only JPG, JPEG, PNG, GIF or WEBP images are allowed.';
-        return '';
-    }
-
-    $mime = mime_content_type($file['tmp_name']);
-    $allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (!in_array($mime, $allowedMimes, true)) {
-        $errors[] = 'The uploaded file is not a valid image.';
-        return '';
-    }
-
-    $filename = bin2hex(random_bytes(16)) . '.' . $extension;
-    if (!move_uploaded_file($file['tmp_name'], UPLOADS_PATH . '/' . $filename)) {
-        $errors[] = 'Could not save the uploaded image.';
-        return '';
-    }
-
-    return $filename;
-}
-
-function deleteImageFile($filename)
-{
-    if ($filename === '' || $filename === null) {
-        return;
-    }
-    // Never trust the stored value blindly - only a plain filename is allowed
-    $filename = basename($filename);
-    $path = UPLOADS_PATH . '/' . $filename;
-    if (is_file($path)) {
-        unlink($path);
-    }
+  $message = isset($_SESSION['message']) ? $_SESSION['message'] : null;
+  unset($_SESSION['message']);
+  return $message;
 }

@@ -1,81 +1,70 @@
 <?php
-// =====================================================================
-// Form validation - each function returns an array of error messages
-// =====================================================================
 
-function validateRegister($input)
+
+function validateRegister($name, $email, $password, $password_confirmation)
 {
-    $errors = [];
-    $name = trim($input['name'] ?? '');
-    $email = trim($input['email'] ?? '');
-    $password = $input['password'] ?? '';
-    $confirm = $input['confirm_password'] ?? '';
 
-    if ($name === '') {
-        $errors[] = 'Name is required.';
-    } elseif (mb_strlen($name) < 2) {
-        $errors[] = 'Name must be at least 2 characters.';
-    } elseif (mb_strlen($name) > 100) {
-        $errors[] = 'Name must be 100 characters or fewer.';
-    }
+  /// sanitize
+  $name = sanitizer($name);
+  $email = sanitizer($email);
+  $password = sanitizer($password);
+  $password_confirmation = sanitizer($password_confirmation);
 
-    if ($email === '') {
-        $errors[] = 'Email is required.';
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = 'Invalid email format.';
-    }
+  $errors = [];
 
-    if ($password === '') {
-        $errors[] = 'Password is required.';
-    } elseif (strlen($password) < 6) {
-        $errors[] = 'Password must be at least 6 characters.';
-    }
+  if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    $errors[] = "email is invalid";
+  }
 
-    if ($confirm === '') {
-        $errors[] = 'Please confirm your password.';
-    } elseif ($password !== $confirm) {
-        $errors[] = 'Passwords do not match.';
-    }
+  if (strlen($name) < 2) {
+    $errors[] = "name must be more than 2 characters";
+  }
 
-    return $errors;
+  if ($password != $password_confirmation) {
+    $errors[] = "passwords don't match";
+  }
+
+  return $errors;
 }
 
-function validateLogin($input)
+
+function sanitizer($val)
 {
-    $errors = [];
-    $email = trim($input['email'] ?? '');
-    $password = $input['password'] ?? '';
-
-    if ($email === '') {
-        $errors[] = 'Email is required.';
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = 'Invalid email format.';
-    }
-
-    if ($password === '') {
-        $errors[] = 'Password is required.';
-    }
-
-    return $errors;
+  return htmlspecialchars(strip_tags(trim($val)));
 }
 
-function validatePost($input)
+function validatePost($title, $content, $image)
 {
-    $errors = [];
-    $title = trim($input['title'] ?? '');
-    $content = trim($input['content'] ?? '');
+  $title = sanitizer($title);
+  $content = sanitizer($content);
 
-    if ($title === '') {
-        $errors[] = 'Title is required.';
-    } elseif (mb_strlen($title) > 200) {
-        $errors[] = 'Title must be 200 characters or fewer.';
+  $errors = [];
+
+  if (strlen($title) < 1) {
+    $errors[] = "title is required";
+  }
+  if (strlen($content) < 1) {
+    $errors[] = "content is required";
+  }
+
+  /// image validation
+
+  if (isset($image)) {
+
+    /// 5 MB
+    $max_file_size = 5 * 1024 * 1024;
+
+    if (filesize($image['tmp_name']) > $max_file_size) {
+      $errors[] = "file too big";
     }
 
-    if ($content === '') {
-        $errors[] = 'Content is required.';
-    } elseif (mb_strlen($content) < 10) {
-        $errors[] = 'Content must be at least 10 characters.';
-    }
+    $allowed_mimes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    $mime = mime_content_type($image['tmp_name']);
 
-    return $errors;
+    if (!in_array($mime, $allowed_mimes)) {
+      $errors[] = "file format not allowed";
+    }
+  }
+
+  return $errors;
 }
